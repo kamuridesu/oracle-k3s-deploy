@@ -39,7 +39,7 @@ set +a
 read -p "Setup your DNS to point to the Load Balancer IP: $LB_IP and press [Enter]"
 read -p "Enter your DNS name: " DNS_NAME
 
-for i in {1..50}; do  # total wait: 500s (5m)
+for i in {1..50}; do  # total wait: 1000s (~16m)
     echo "Checking DNS..."
     LB_IP_DNS=$(dig +short $DNS_NAME)
     if [ "$LB_IP_DNS" == "$LB_IP" ]; then
@@ -47,9 +47,14 @@ for i in {1..50}; do  # total wait: 500s (5m)
         break
     else
         echo "DNS is not pointing to the Load Balancer IP. Retrying in 10 seconds..."
-        sleep 10
+        sleep 20
     fi
 done
+
+if [ "$LB_IP_DNS" != "$LB_IP" ]; then
+    echo "Could not verify DNS. Exiting..."
+    exit 1
+fi
 
 cd ../ansible
 
