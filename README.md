@@ -2,6 +2,8 @@
 
 This repositories is a painless-way to setup k3s on OCI without having to manage all the configuration manually.
 
+This README is also available in Brazilian Portuguese, check out: [README-pt.md](README-pt.md)
+
 # How it works
 
 The file `setup.sh` is a simple bash script that clones two repositories, one containing Terraform configuration files for creating the necessary resources and configurations on OCI and another containing Ansible playbooks to configure the VMs for K3s.
