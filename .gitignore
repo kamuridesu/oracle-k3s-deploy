@@ -2,3 +2,4 @@ hosts
 vars.env
 ansible
 terraform
+domains

@@ -17,16 +17,27 @@ for var in ${VARS[@]}; do
     fi
 done
 
-if [[ ! -f "hosts" ]]; then
-    echo "Hosts file not found"
+if [ ! -f domains ]; then
+    echo "File 'domains' not found. Please create a file 'domains' with the domain name you want to use."
     exit 1
 fi
 
-git clone https://github.com/kamuridesu/oracle-k3s-terraform.git terraform
-git clone https://github.com/kamuridesu/ansible-oracle-k3s.git ansible
+DOMAINS=$(cat domains)
+FIRST_DOMAIN=$(echo "${DOMAINS}" | head -n 1)
+COMMA_SEPARATED_DOMAINS=$(echo "${DOMAINS}" | tr '\n' ',' | sed 's/,$//')
+
+git clone https://github.com/kamuridesu/oracle-k3s-terraform.git terraform 2>/dev/null || (cd terraform && git pull)
+git clone https://github.com/kamuridesu/ansible-oracle-k3s.git ansible 2>/dev/null || (cd ansible && git pull)
 
 cd terraform
-tf init
+
+# check if the backend is already initialized
+if [ -f .terraform/terraform.tfstate ]; then
+    echo "Backend already initialized. Skipping..."
+else
+    tf init
+fi
+
 tf apply
 
 VM_IP_ADDR=$(tf output -json)
@@ -36,20 +47,22 @@ WORKER_IP=$(echo -n "${VM_IP_ADDR}" | jq -r '.k3s_public_ip.value["k3s-node"]')
 LB_IP=$(echo -n "${VM_IP_ADDR}" | jq -r '.lb_public_ip.value["load-balancer"]')
 set +a
 
-read -p "Setup your DNS to point to the Load Balancer IP: $LB_IP and press [Enter]"
-read -p "Enter your DNS name: " DNS_NAME
+LB_IP_DNS=$(dig +short $FIRST_DOMAIN)
+if [ "$LB_IP_DNS" != "$LB_IP" ]; then
+    read -p "Setup your DNS '$FIRST_DOMAIN' to point to the Load Balancer IP: '$LB_IP' and press [Enter]"
+    for i in {1..50}; do  # total wait: 1000s (~16m)
+        echo "Checking DNS..."
+        LB_IP_DNS=$(dig +short $FIRST_DOMAIN)
+        if [ "$LB_IP_DNS" == "$LB_IP" ]; then
+            echo "DNS is pointing to the Load Balancer IP"
+            break
+        else
+            echo "DNS is not pointing to the Load Balancer IP. Retrying in 10 seconds..."
+            sleep 20
+        fi
+    done
 
-for i in {1..50}; do  # total wait: 1000s (~16m)
-    echo "Checking DNS..."
-    LB_IP_DNS=$(dig +short $DNS_NAME)
-    if [ "$LB_IP_DNS" == "$LB_IP" ]; then
-        echo "DNS is pointing to the Load Balancer IP"
-        break
-    else
-        echo "DNS is not pointing to the Load Balancer IP. Retrying in 10 seconds..."
-        sleep 20
-    fi
-done
+fi
 
 if [ "$LB_IP_DNS" != "$LB_IP" ]; then
     echo "Could not verify DNS. Exiting..."
@@ -58,8 +71,8 @@ fi
 
 cd ../ansible
 
-cat ../hosts.example | envsubst > inventory/hosts
+cat ../hosts | envsubst > inventory/hosts
 
-ansible-playbook -i inventory/hosts --private-key ${PRIVATE_KEY_PATH} playbook.yml
+ansible-playbook -i inventory/hosts --private-key ${PRIVATE_KEY_PATH} -e "domains=$COMMA_SEPARATED_DOMAINS user_email=$CERTBOT_EMAIL" playbook.yml
 
 cd ..
